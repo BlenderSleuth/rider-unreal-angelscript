@@ -46,6 +46,9 @@
                                implementationClass="com.redhat.devtools.lsp4ij.features.typeHierarchy.LSPTypeHierarchyProvider"/>
         <!-- Automatic paired bracket insertion -->
         <typedHandler implementation="com.scriptacus.riderunrealangelscript.lang.AngelScriptTypedHandler"/>
+        <!-- Code formatter for Format Code action and auto-formatting -->
+        <lang.formatter language="angelscript"
+                        implementationClass="com.scriptacus.riderunrealangelscript.lang.AngelScriptFormattingModelBuilder"/>
         <!-- External code formatter for Format Code action and auto-formatting -->
         <formattingService implementation="com.scriptacus.riderunrealangelscript.lang.AngelScriptExternalFormatter"
                            order="first"/>
