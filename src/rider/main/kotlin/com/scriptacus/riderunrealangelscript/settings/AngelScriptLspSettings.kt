@@ -42,12 +42,7 @@ class AngelScriptLspSettings : PersistentStateComponent<AngelScriptLspSettings.S
         var cppNavigationStrategy: CppNavigationStrategy = CppNavigationStrategy.TEXT_SEARCH,
 
         // Advanced
-        var projectCodeGenerationEnable: Boolean = false,
-
-        // LSP Initialization
-        var lspInitialDelayMs: Int = 2000,
-        var lspMaxRetries: Int = 3,
-        var lspRetryBackoffMs: Int = 1000
+        var projectCodeGenerationEnable: Boolean = false
     )
 
     private var state = State()

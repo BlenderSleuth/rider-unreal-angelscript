@@ -16,124 +16,33 @@ import org.eclipse.lsp4j.CompletionItem
 import org.eclipse.lsp4j.Position
 import org.eclipse.lsp4j.Range
 import org.eclipse.lsp4j.TextEdit
-import java.lang.reflect.Method
 
 /**
- * Custom completion proposal that fixes lsp4ij's bug with additionalTextEdits ordering.
+ * AngelScript-specific completion proposal.
  *
- * ## The Bug
+ * Overrides lsp4ij's `apply()` for two reasons:
  *
- * lsp4ij's LSPIJUtils.applyEdits() sorts text edits with an unstable comparator that
- * returns 0 for same-position edits, violating the LSP spec requirement to preserve
- * array order for same-position insertions.
+ * 1. **Scope-aware prefix.** When the server sends no textEdit, lsp4ij replaces from the start
+ *    of the PSI element, so completing `FVector::Z` would replace `FVector::` as well.
+ *    [calculateScopeAwarePrefix] treats `::` as a word boundary instead.
+ * 2. **Caret placement.** Edits are applied end-to-start, preserving LSP array order for
+ *    same-position edits, and the caret ends up at the end of the main textEdit rather than
+ *    being shifted by additionalTextEdits (e.g. an inserted `UFUNCTION()` line).
  *
- * **LSP Specification (v3.17, Section 3.16.6.4):**
- * > "The edits must be sorted in reverse document order (from end to start). Multiple edits
- * > at the same position are considered to be in the same order as they appear in the array."
+ * It also reformats the edited range after insertion (see [handleInsert]).
  *
- * **lsp4ij Bug:** The comparator in LSPIJUtils.doApplyEdits() is:
- * ```java
- * public int compare(TextEdit a, TextEdit b) {
- *     int diff = a.getRange().getStart().getLine() - b.getRange().getStart().getLine();
- *     if (diff == 0) {
- *         return a.getRange().getStart().getCharacter() - b.getRange().getStart().getCharacter();
- *     }
- *     return diff;
- * }
- * ```
- * This returns 0 for same-position edits, which makes the sort unstable and can reorder
- * same-position edits arbitrarily, breaking completions that rely on specific ordering.
- *
- * ## The Fix
- *
- * Reimplements the parent's apply() method identically (lines 171-266), but replaces the call to
- * LSPIJUtils.applyEdits() with our own applyEditsWithStableSort() (line 260) that uses a
- * stable comparator (StableTextEditComparator, lines 72-89).
- *
- * The stable comparator preserves array order for same-position edits by tracking original
- * indices and using them as a tiebreaker.
- *
- * ## Why Reflection Is Necessary
- *
- * The parent class LSPCompletionProposal has several private fields and methods that are
- * needed to reimplement apply():
- * - `getInsertText()` - Gets the text to insert
- * - `getResolvedCompletionItem()` - Gets resolved completion with additionalTextEdits
- * - `prefixStartOffset` - Start offset of the prefix being completed
- * - `completionOffset` - Offset where completion was triggered
- * - `editor` - The editor instance
- *
- * We cannot override apply() without accessing these, and they are private. Reflection
- * is the only way to access them without modifying lsp4ij.
- *
- * ## How to Detect If Fixed Upstream
- *
- * To check if lsp4ij has fixed this bug:
- *
- * 1. Look for changes to LSPIJUtils.doApplyEdits() in lsp4ij releases
- * 2. Check if the comparator now preserves array order for same-position edits
- * 3. Test with a completion that has multiple additionalTextEdits at the same position
- * 4. If the edits are applied in LSP array order, the bug is fixed
- *
- * **Test case:** A completion that adds UFUNCTION() above a method declaration:
- * ```
- * additionalTextEdits: [
- *   { range: {line: 5, char: 0 - line: 5, char: 0}, newText: "UFUNCTION()\n" }
- *   { range: {line: 5, char: 0 - line: 5, char: 0}, newText: "\t" }
- * ]
- * ```
- * Expected result: `UFUNCTION()\n\t` (newline, then tab)
- * Bug result: Could be `\tUFUNCTION()\n` (reversed)
- *
- * ## Version Compatibility
- *
- * - **Affected versions:** lsp4ij 0.19.2-SNAPSHOT (as of 2024-12-30)
- * - **Testing needed:** Test with each lsp4ij update
- * - **Risk:** Low - Reflection API is stable, but lsp4ij could change field/method names
- *
- * ## Maintenance Notes
- *
- * See docs/LSP_COMPLETION_WORKAROUND.md for detailed maintenance guide including:
- * - How to remove this workaround if upstream fixes the bug
- * - How to update if lsp4ij changes private API
- * - Testing procedures for verifying the fix is still needed
+ * Only public lsp4ij API is used. lsp4ij's private fields and methods are not accessed, so
+ * newer lsp4ij releases (which users install independently from the Marketplace) cannot
+ * break completion by renaming them.
  */
 class AngelScriptCompletionProposal(
     item: CompletionItem,
-    private val context: LSPCompletionFeature.LSPCompletionContext,
+    private val completionContext: LSPCompletionFeature.LSPCompletionContext,
     completionFeature: LSPCompletionFeature
-) : LSPCompletionProposal(item, context, completionFeature) {
+) : LSPCompletionProposal(item, completionContext, completionFeature) {
 
     companion object {
         private val LOG = Logger.getInstance(AngelScriptCompletionProposal::class.java)
-
-        // Reflection to access private parent methods/fields
-        // These are required to reimplement apply() with stable sort fix
-
-        /** Accesses LSPCompletionProposal.getInsertText() to get the completion text */
-        private val getInsertTextMethod: Method = LSPCompletionProposal::class.java.getDeclaredMethod("getInsertText").apply {
-            isAccessible = true
-        }
-
-        /** Accesses LSPCompletionProposal.getResolvedCompletionItem() to get additionalTextEdits */
-        private val getResolvedCompletionItemMethod: Method = LSPCompletionProposal::class.java.getDeclaredMethod("getResolvedCompletionItem").apply {
-            isAccessible = true
-        }
-
-        /** Accesses LSPCompletionProposal.prefixStartOffset field for range calculation */
-        private val prefixStartOffsetField = LSPCompletionProposal::class.java.getDeclaredField("prefixStartOffset").apply {
-            isAccessible = true
-        }
-
-        /** Accesses LSPCompletionProposal.completionOffset field for range adjustment */
-        private val completionOffsetField = LSPCompletionProposal::class.java.getDeclaredField("completionOffset").apply {
-            isAccessible = true
-        }
-
-        /** Accesses LSPCompletionProposal.editor field to adjust caret position after edits */
-        private val editorField = LSPCompletionProposal::class.java.getDeclaredField("editor").apply {
-            isAccessible = true
-        }
 
         /**
          * Stable comparator for TextEdits - DESCENDING order (end to start of document).
@@ -276,8 +185,10 @@ class AngelScriptCompletionProposal(
     }
 
     override fun apply(document: Document, offset: Int) {
-        // This is a complete copy of the parent's apply() method
-        // The ONLY difference is we call applyEditsWithStableSort instead of LSPIJUtils.applyEdits
+        // Mirrors lsp4ij's LSPCompletionProposal.apply(), except for the prefix calculation
+        // and applyEditsWithStableSort (see class documentation).
+        // By the time apply() runs, lsp4ij's handleInsert() has already replaced `item` with the
+        // resolved completion item (LSPCompletionFeature.shouldResolveOnApply defaults to true).
 
         var insertText: String? = null
         var textEdit: TextEdit? = null
@@ -294,14 +205,14 @@ class AngelScriptCompletionProposal(
             }
 
             if (textEdit == null) {
-                insertText = getInsertTextMethod.invoke(this) as String?
+                insertText = item.insertText ?: item.label
                 val startOffset = calculateScopeAwarePrefix(document, offset)
                 val endOffset = offset
                 val start = LSPIJUtils.toPosition(startOffset, document)
                 val end = LSPIJUtils.toPosition(endOffset, document)
                 textEdit = TextEdit(Range(start, end), insertText)
             } else {
-                val completionOffset = completionOffsetField.getInt(this)
+                val completionOffset = completionContext.parameters.offset
                 if (offset > completionOffset) {
                     val shift = offset - completionOffset
                     textEdit.range.end.character = textEdit.range.end.character + shift
@@ -341,14 +252,7 @@ class AngelScriptCompletionProposal(
                 textEdit.range.end.character = textEdit.range.end.character + commonSize
             }
 
-            // Get additional edits
-            var additionalEdits = item.additionalTextEdits
-            if ((additionalEdits == null || additionalEdits.isEmpty()) && context.isResolveCompletionSupported) {
-                val resolved = getResolvedCompletionItemMethod.invoke(this) as CompletionItem?
-                if (resolved != null) {
-                    additionalEdits = resolved.additionalTextEdits
-                }
-            }
+            val additionalEdits = item.additionalTextEdits
 
             // Combine all edits
             val allEdits = if (additionalEdits != null && additionalEdits.isNotEmpty()) {
@@ -360,8 +264,7 @@ class AngelScriptCompletionProposal(
                 listOf(textEdit)
             }
 
-            // THE FIX: Use our stable sort instead of LSPIJUtils.applyEdits
-            val editor = editorField.get(this) as Editor?
+            val editor = completionContext.parameters.editor
             WriteAction.run<RuntimeException> {
                 applyEditsWithStableSort(editor, document, allEdits)
             }
@@ -383,13 +286,8 @@ class AngelScriptCompletionProposal(
         try {
             val document = context.document
 
-            // Get all text edits that were applied
-            val resolved = try {
-                getResolvedCompletionItemMethod.invoke(this) as CompletionItem?
-            } catch (ex: Exception) {
-                null
-            }
-            val additionalEdits = resolved?.additionalTextEdits ?: item.additionalTextEdits
+            // `item` is the resolved completion item at this point (see apply())
+            val additionalEdits = item.additionalTextEdits
 
             LOG.info("=== Auto-format after completion ===")
             LOG.info("Context startOffset: ${context.startOffset}, tailOffset: ${context.tailOffset}")

@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 and this project adheres to [Semantic Versioning](http://semver.org/spec/v2.0.0.html).
 
+## Unreleased
+
+### Fixed
+- Language server features (completion, hover, go to definition, etc.) no longer silently stop working when the language server starts after project open or is restarted. Settings are now sent on every server start, so the server always connects to Unreal Engine.
+- Applying AngelScript settings no longer starts the language server if it isn't running.
+- Removed a stray character from plugin.xml.
+
+### Changed
+- Built against lsp4ij 0.21.0 (was 0.19.1), which includes upstream fixes for IDE freezes, deadlocks and silently dropped LSP messages.
+- Removed the "LSP initialization" delay/retry settings, which are no longer needed.
+
+### Internal
+- Completion no longer uses reflection into lsp4ij internals, so newer lsp4ij releases cannot break it by renaming private members.
+
 ## 0.9.10 - 2026-04-22
 
 ### Changed

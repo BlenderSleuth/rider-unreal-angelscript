@@ -91,15 +91,12 @@
             doNotActivateOnStart="true"
             icon="com.scriptacus.riderunrealangelscript.AngelScriptIcons.ProjectWindow"/>
 
-        <!-- Send initial LSP configuration when project opens -->
-        <postStartupActivity implementation="com.scriptacus.riderunrealangelscript.lsp.AngelScriptLspInitializer"/>
-
         <!-- Auto-switch between AngelScript Files and Solution Explorer tool windows -->
         <postStartupActivity implementation="com.scriptacus.riderunrealangelscript.toolwindow.ToolWindowSwitcher"/>
 
         <!-- Detect and register AngelScript Script folders as module content roots -->
         <postStartupActivity implementation="com.scriptacus.riderunrealangelscript.project.AngelScriptContentRootProvider"/>
-G    </extensions>
+    </extensions>
 
     <extensions defaultExtensionNs="com.redhat.devtools.lsp4ij">
         <server id="angelscript-lsp" factoryClass="com.scriptacus.riderunrealangelscript.lsp.AngelScriptLanguageServerFactory"/>
@@ -111,6 +108,8 @@ G    </extensions>
             id="angelscript-dap"
             name="AngelScript Debug Adapter"
             factoryClass="com.scriptacus.riderunrealangelscript.debug.AngelScriptDebugAdapterDescriptorFactory"/>
+        <!-- Not an LSP mapping: lsp4ij's DebugAdapterManager reads languageMapping entries to decide
+             which files the debug adapter handles (breakpoints). Do not remove. -->
         <languageMapping language="angelscript" serverId="angelscript-dap"/>
     </extensions>
 

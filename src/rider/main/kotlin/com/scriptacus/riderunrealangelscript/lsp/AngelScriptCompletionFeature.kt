@@ -9,11 +9,8 @@ import org.eclipse.lsp4j.CompletionItemKind
 import javax.swing.Icon
 
 /**
- * Custom completion feature that uses AngelScriptCompletionProposal to fix
- * lsp4ij's additionalTextEdits ordering bug.
- *
- * This feature overrides the default LSPCompletionProposal creation to use our
- * fixed version that applies text edits with a stable sort order.
+ * Custom completion feature that creates AngelScriptCompletionProposal lookup elements
+ * (scope-aware `::` prefix handling, caret placement and post-insert formatting).
  *
  * Also customizes icon mapping for AngelScript's scripting language semantics:
  * - Method -> Function icon (AngelScript uses "function" terminology)
@@ -32,7 +29,6 @@ class AngelScriptCompletionFeature : LSPCompletionFeature() {
             return null
         }
 
-        // Use our fixed completion proposal instead of the default
         return AngelScriptCompletionProposal(item, context, this)
     }
 
